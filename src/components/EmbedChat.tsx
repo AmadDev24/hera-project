@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   Sparkles,
@@ -101,9 +102,55 @@ export default function EmbedChat() {
   const [ratings, setRatings] = useState<Record<string, 'up' | 'down'>>({});
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [sessionId, setSessionId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
+  // Initialize window state from localStorage synchronously to avoid visual flash
+  const readStored = () => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('hera-embed-window-state') : null;
+      if (raw) {
+        const p = JSON.parse(raw);
+        return {
+          isMax: !!p.isMaximized,
+          isMin: p.isMinimized === undefined ? true : !!p.isMinimized,
+          isVis: p.isVisible === undefined ? true : !!p.isVisible,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { isMax: false, isMin: true, isVis: true };
+  };
+
+  const _stored = readStored();
+  const [isMaximized, setIsMaximized] = useState<boolean>(_stored.isMax);
+  const [isMinimized, setIsMinimized] = useState<boolean>(_stored.isMin);
+  const [isVisible, setIsVisible] = useState<boolean>(_stored.isVis);
+
+  // Persisted keys
+  const STORAGE_KEY = 'hera-embed-window-state';
+
+  // Load persisted state on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.isMaximized === 'boolean') setIsMaximized(parsed.isMaximized);
+        if (typeof parsed.isMinimized === 'boolean') setIsMinimized(parsed.isMinimized);
+        if (typeof parsed.isVisible === 'boolean') setIsVisible(parsed.isVisible);
+      }
+    } catch (e) {
+      // ignore malformed state
+    }
+  }, []);
+
+  // Save state whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ isMaximized, isMinimized, isVisible }));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [isMaximized, isMinimized, isVisible]);
   // Branding config from Firestore (with defaults)
   const [alertConfig, setAlertConfig] = useState({ enabled: false, adminEmails: '', notifyOnLeads: true, notifyOnNegativeRating: true, notifyOnNewConversation: false, leadTemplateId: '', negativeRatingTemplateId: '', newConversationTemplateId: '', sendLeadWelcomeEmail: false, leadWelcomeTemplateId: '' });
   const [branding, setBranding] = useState({
@@ -545,21 +592,24 @@ export default function EmbedChat() {
     setIsMaximized(false);
   };
 
-  const handleToggleMaximize = () => {
-    // Toggle maximized state; un-minimize if currently minimized
-    setIsMinimized(false);
-    setIsMaximized((v) => !v);
-    setIsVisible(true);
-  };
-
-  const handleToggleMinimize = () => {
-    setIsMinimized((v) => !v);
-    if (isMaximized) setIsMaximized(false);
-    setIsVisible(true);
+  const handleToggleMinMax = () => {
+    // Single toggle: when not maximized -> maximize; when maximized -> minimize to bubble
+    if (!isMaximized) {
+      setIsMaximized(true);
+      setIsMinimized(false);
+      setIsVisible(true);
+    } else {
+      // currently maximized -> minimize into bubble
+      setIsMaximized(false);
+      setIsMinimized(true);
+      setIsVisible(true);
+    }
   };
 
   const handleCloseWidget = () => {
     setIsVisible(false);
+    setIsMinimized(false);
+    setIsMaximized(false);
   };
 
   // Prevent background scroll while maximized
@@ -572,28 +622,39 @@ export default function EmbedChat() {
     return;
   }, [isMaximized]);
 
+  // helper to wrap the entire widget with overlay/portal when maximized
+  const wrapWithOverlay = (children: React.ReactNode) => {
+    const wrapper = (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className={isMaximized ? 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40' : ''}
+      >
+        <motion.div
+          layout
+          initial={isMaximized ? { scale: 0.9, opacity: 0 } : { scale: 1, opacity: 1 }}
+          animate={isMaximized ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+          className={`relative flex flex-col ${isMaximized ? 'h-[80vh] w-[80vw] md:w-4/5 md:h-4/5 rounded-xl overflow-hidden' : 'h-screen w-full'} bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden font-sans`}
+          id="embed-widget-container"
+        >
+          {children}
+        </motion.div>
+      </motion.div>
+    );
+    if (isMaximized && typeof document !== 'undefined') return createPortal(wrapper, document.body as any);
+    return wrapper;
+  };
+
   return (
     <>
       <AnimatePresence>
-        {isVisible && !isMinimized && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className={isMaximized ? 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40' : ''}
-          >
-            <motion.div
-              layout
-              initial={isMaximized ? { scale: 0.9, opacity: 0 } : { scale: 1, opacity: 1 }}
-              animate={isMaximized ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-              className={`relative flex flex-col ${isMaximized ? 'h-full w-full md:w-4/5 md:h-[80vh] rounded-xl overflow-hidden' : 'h-screen w-full'} bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden font-sans`}
-              id="embed-widget-container"
-            >
-      
-      {/* Branded Widget Header (Highly streamlined, eye-safe, and compact) */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-850/80 bg-white/95 dark:bg-slate-900/95 shadow-xs shrink-0 select-none">
+        {isVisible && !isMinimized && wrapWithOverlay(
+          <>
+            {/* Branded Widget Header (Highly streamlined, eye-safe, and compact) */}
+            <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-850/80 bg-white/95 dark:bg-slate-900/95 shadow-xs shrink-0 select-none">
         <div className="flex items-center gap-2">
           <div className="relative flex items-center justify-center">
             <div className="absolute inset-0 bg-blue-500/10 rounded-lg filter blur-xs animate-ping" />
@@ -608,18 +669,11 @@ export default function EmbedChat() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
             <button
-              onClick={handleToggleMinimize}
-              title="Minimize"
-              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <Minimize2 size={14} />
-            </button>
-            <button
-              onClick={handleToggleMaximize}
-              title="Maximize"
+              onClick={handleToggleMinMax}
+              title={isMaximized ? 'Minimize' : 'Maximize'}
               className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -953,15 +1007,20 @@ export default function EmbedChat() {
         </p>
       </div>
 
-        </motion.div>
-          </motion.div>
-        )}
-        {isMinimized && (
+        
+      </>) }
+
+        {isMinimized && isVisible && (
           <motion.button
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            onClick={() => setIsMinimized(false)}
+            onClick={() => {
+              // restore to normal (non-maximized) view
+              setIsMinimized(false);
+              setIsMaximized(false);
+              setIsVisible(true);
+            }}
             className="fixed bottom-4 right-4 z-60 w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
             title="Restore chat"
           >
