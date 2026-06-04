@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Play, Search, MessageSquare, FlaskConical, Code2 } from 'lucide-react';
+import { Play, Search, MessageSquare, FlaskConical, Loader2 } from 'lucide-react';
 import { BentoCard } from '../BentoCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,13 +21,6 @@ interface PlaygroundTabProps {
   onModelChange?: (model: string) => void;
 }
 
-const EXAMPLE_QUERIES = [
-  'What are the YA 2025 individual income tax brackets?',
-  'Maximum lifestyle relief claim for YA 2025?',
-  'e-Filing deadline for Form BE in 2026?',
-  'SME corporate tax rates Malaysia 2025?',
-];
-
 export function PlaygroundTab({
   messages,
   query,
@@ -46,49 +39,51 @@ export function PlaygroundTab({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const userCount      = messages.filter((m) => m.role === 'user').length;
-  const assistantCount = messages.filter((m) => m.role === 'model').length;
+  const activeFaqs = faqs.filter((f: any) => f.enabled);
 
   return (
-    <div className="grid grid-cols-12 auto-rows-[80px] gap-3">
+    <div className="grid lg:grid-cols-[1fr_280px] gap-4 min-h-[600px]">
 
-      {/* Main chat area will occupy left and center; right column shows active FAQs */}
-
-      {/* Main chat area — 8 cols × 8 rows */}
-      <BentoCard className="col-span-12 lg:col-span-8 row-span-8 flex flex-col p-0 overflow-hidden">
+      {/* Chat area */}
+      <BentoCard padding={false} className="flex flex-col overflow-hidden">
+        {/* Header */}
         <div className="px-4 py-3 border-b border-border/40 shrink-0 flex items-center gap-3">
           <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
             <FlaskConical size={14} className="text-primary" />
           </div>
           <div className="flex-1">
-            <h2 className="text-sm font-semibold text-foreground">Playground Sandbox</h2>
-            <p className="text-[10px] text-muted-foreground">Live queries against the grounded chat API</p>
+            <h2 className="text-sm font-semibold text-foreground">Playground</h2>
+            <p className="text-xs text-muted-foreground">Live test against the grounded API</p>
           </div>
           {messages.length > 0 && (
-            <Badge variant="secondary" className="text-[10px]">{messages.length} msgs</Badge>
+            <Badge variant="secondary" className="text-xs">{messages.length} messages</Badge>
           )}
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center py-12 text-muted-foreground">
-              <MessageSquare size={32} className="text-muted-foreground/30 mb-3" />
-              <p className="text-sm font-semibold text-foreground">Sandbox is empty</p>
-              <p className="text-xs mt-1 max-w-xs">Pick an example query above or type one below to test the grounded API.</p>
+            <div className="h-full flex flex-col items-center justify-center text-center py-12">
+              <MessageSquare size={28} className="text-muted-foreground/30 mb-3" />
+              <p className="text-sm font-semibold text-foreground">Playground is empty</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                Type a query below or click an FAQ on the right to test the grounded API.
+              </p>
             </div>
           ) : (
             messages.map((message) => {
               const isUser = message.role === 'user';
               return (
                 <div key={message.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
-                  <div className={`px-3 py-2.5 rounded-xl max-w-[85%] text-xs border ${
-                    isUser ? 'bg-muted border-border/40' : 'bg-card border-border/60'
+                  <div className={`px-3.5 py-2.5 rounded-xl max-w-[85%] text-xs ${
+                    isUser
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card border border-border/50 text-foreground'
                   }`}>
-                    <span className="text-[8px] font-mono font-bold tracking-widest text-muted-foreground block mb-1">
-                      {isUser ? 'SANDBOX USER' : 'GROUNDED RESPONSE'} &bull; {message.timestamp}
+                    <span className="text-[10px] font-medium opacity-60 block mb-1">
+                      {isUser ? 'You' : 'HERA'} · {message.timestamp}
                     </span>
-                    <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+                    <div className={`prose prose-sm max-w-none text-xs leading-relaxed ${isUser ? 'prose-invert' : 'dark:prose-invert'}`}>
                       <Markdown>{message.text}</Markdown>
                     </div>
                   </div>
@@ -103,12 +98,9 @@ export function PlaygroundTab({
           )}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-card border border-border/60 rounded-xl px-4 py-3 space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-                  <span className="text-[9px] font-mono text-muted-foreground">Compiling citations...</span>
-                </div>
-                <div className="h-1.5 w-40 bg-muted rounded animate-pulse" />
+              <div className="bg-card border border-border/50 rounded-xl px-4 py-3 flex items-center gap-2">
+                <Loader2 size={13} className="text-primary animate-spin" />
+                <span className="text-xs text-muted-foreground">Querying grounded API…</span>
               </div>
             </div>
           )}
@@ -116,61 +108,68 @@ export function PlaygroundTab({
         </div>
 
         {/* Input */}
-        <div className="shrink-0 p-3 border-t border-border/40 bg-card">
+        <div className="shrink-0 p-4 border-t border-border/40">
           {error && (
-            <div className="mb-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-lg text-xs text-destructive">
+            <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
-          <form onSubmit={onSubmit} className="flex items-center gap-2 bg-background border border-input rounded-xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring transition-all">
-            <Search size={13} className="text-muted-foreground shrink-0" />
+          <form onSubmit={onSubmit} className="flex items-center gap-2">
             {models.length > 0 && (
               <select
                 value={selectedModel || ''}
                 onChange={(e) => onModelChange && onModelChange(e.target.value)}
-                className="hidden sm:inline-block bg-background border border-border/60 rounded px-2 py-1 text-xs mr-2"
+                className="hidden sm:block h-9 bg-background border border-border rounded-lg px-2 text-xs text-foreground shrink-0 max-w-[140px]"
                 aria-label="Select model"
               >
                 {models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{m.split('/').pop()}</option>
                 ))}
               </select>
             )}
-            <Input
-              type="text"
-              value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="e.g. YA 2025 relief limits for dental fees..."
-              disabled={isLoading}
-              className="border-0 focus-visible:ring-0 bg-transparent h-8 text-xs shadow-none p-0"
-            />
-            <Button type="submit" size="sm" disabled={isLoading || !query.trim()} className="h-7 px-3 text-xs shrink-0">
-              <Play size={10} fill="currentColor" className="mr-1" />Run
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                type="text"
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                placeholder="e.g. YA 2025 lifestyle relief limit…"
+                disabled={isLoading}
+                className="pl-8 h-9 text-xs"
+              />
+            </div>
+            <Button type="submit" size="sm" disabled={isLoading || !query.trim()} className="h-9 px-4 text-xs shrink-0 gap-1.5">
+              {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={10} fill="currentColor" />}
+              Run
             </Button>
           </form>
         </div>
       </BentoCard>
 
-      {/* Active FAQs panel — right column */}
-      <BentoCard className="col-span-12 lg:col-span-4 row-span-8 flex flex-col">
-        <div className="flex items-center gap-2 mb-3">
-          <Code2 size={15} className="text-primary" />
-          <h2 className="text-sm font-semibold text-foreground">Active FAQs</h2>
-        </div>
-        <div className="space-y-3 flex-1 overflow-auto">
-          {faqs.filter((f: any) => f.enabled).length === 0 ? (
-            <p className="text-xs text-muted-foreground">No active FAQs available.</p>
+      {/* Active FAQs sidebar */}
+      <BentoCard className="flex flex-col overflow-hidden">
+        <h2 className="text-sm font-semibold text-foreground mb-1">Active FAQs</h2>
+        <p className="text-xs text-muted-foreground mb-4">Click to load into sandbox</p>
+        <div className="flex-1 overflow-y-auto space-y-2">
+          {activeFaqs.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No active FAQs. Add FAQs in the FAQs tab.</p>
           ) : (
-            faqs.filter((f: any) => f.enabled).map((f: any) => (
-              <div key={f.id} className="rounded-md border border-border/40 p-3 bg-muted/30">
-                <p className="text-sm font-semibold text-foreground">{f.title || f.query}</p>
-                <p className="text-xs text-muted-foreground mt-1">{(f.answer || '').slice(0, 180)}{(f.answer || '').length > 180 ? '...' : ''}</p>
-              </div>
+            activeFaqs.map((f: any) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => onQueryChange(f.query)}
+                className="w-full text-left rounded-lg border border-border/40 bg-muted/20 hover:bg-primary/5 hover:border-primary/20 hover:text-primary px-3 py-2.5 transition-colors group"
+              >
+                <p className="text-xs font-medium text-foreground group-hover:text-primary line-clamp-2 leading-snug">{f.title || f.query}</p>
+                {f.answer && (
+                  <p className="text-[11px] text-muted-foreground mt-1 line-clamp-1">{f.answer.slice(0, 60)}…</p>
+                )}
+              </button>
             ))
           )}
         </div>
       </BentoCard>
-
     </div>
   );
 }

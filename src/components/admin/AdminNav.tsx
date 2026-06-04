@@ -1,7 +1,7 @@
 import React from 'react';
 import { BarChart3, CheckSquare, BookOpen, FlaskConical, MessageSquare, Users, Settings } from 'lucide-react';
 
-export type AdminTab = 'monitor' | 'history' | 'faqs' | 'playground' | 'leads' | 'alerts' | 'settings';
+export type AdminTab = 'monitor' | 'history' | 'faqs' | 'playground' | 'leads' | 'alerts' | 'settings' | 'users';
 
 const ITEMS: { tab: AdminTab; label: string; icon: React.ReactNode }[] = [
   {

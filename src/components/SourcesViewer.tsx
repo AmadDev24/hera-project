@@ -1,16 +1,14 @@
 import React from 'react';
-import { ExternalLink, Globe, BookOpen } from 'lucide-react';
-import { motion } from 'motion/react';
+import { ExternalLink, Globe } from 'lucide-react';
 import { GroundingChunk } from '../types';
 
 interface SourcesViewerProps {
   chunks?: GroundingChunk[];
 }
 
-function getDomainName(url: string): string {
+function getDomain(url: string): string {
   try {
-    const parsed = new URL(url);
-    return parsed.hostname.replace('www.', '');
+    return new URL(url).hostname.replace('www.', '');
   } catch {
     return 'Web Source';
   }
@@ -19,81 +17,50 @@ function getDomainName(url: string): string {
 export default function SourcesViewer({ chunks }: SourcesViewerProps) {
   if (!chunks || chunks.length === 0) return null;
 
-  // Filter out any chunks that don't have web links
-  const webChunks = chunks.filter((chunk) => chunk.web && chunk.web.uri);
-
+  const webChunks = chunks.filter((c) => c.web?.uri);
   if (webChunks.length === 0) return null;
 
   return (
-    <div className="w-full mt-4 mb-6">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="bg-blue-50 dark:bg-blue-950/40 p-1.5 rounded-lg text-google-blue dark:text-blue-400">
-          <BookOpen size={15} />
-        </div>
-        <h5 className="text-xs font-display font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Sources Referenced
-        </h5>
-        <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-semibold">
-          {webChunks.length} {webChunks.length === 1 ? 'Site' : 'Sites'}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {webChunks.map((chunk, index) => {
-          const webInfo = chunk.web!;
-          const domain = getDomainName(webInfo.uri);
-          const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+    <div className="mt-3 pt-3 border-t border-border/30 space-y-2">
+      <p className="text-[11px] font-medium text-muted-foreground">
+        {webChunks.length} source{webChunks.length !== 1 ? 's' : ''} cited
+      </p>
+      <div className="space-y-1.5">
+        {webChunks.map((chunk, idx) => {
+          const { uri, title } = chunk.web!;
+          const domain = getDomain(uri);
+          const favicon = `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
 
           return (
-            <motion.a
-              key={index}
-              href={webInfo.uri}
+            <a
+              key={idx}
+              href={uri}
               target="_blank"
               rel="noopener noreferrer"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05, duration: 0.3 }}
-              className="flex items-start gap-3 p-3.5 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl transition-all shadow-xs hover:shadow-md group relative overflow-hidden"
-              title={webInfo.title}
-              id={`source-card-${index}`}
+              title={title}
+              className="flex items-center gap-2.5 rounded-lg border border-border/40 bg-background/60 hover:bg-muted/40 px-2.5 py-2 transition-colors group"
             >
-              {/* Dynamic Favicon / Fallback Globe */}
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700/50 flex items-center justify-center overflow-hidden">
+              <div className="h-5 w-5 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
                 <img
-                  src={faviconUrl}
+                  src={favicon}
                   alt={domain}
+                  className="h-3 w-3 object-contain"
                   onError={(e) => {
-                    // Fallback to Globe Icon if Google s2 favicon fails
                     e.currentTarget.style.display = 'none';
-                    const parent = e.currentTarget.parentElement;
-                    if (parent) {
-                      const svg = parent.querySelector('.globe-stub');
-                      if (svg) svg.classList.remove('hidden');
-                    }
+                    const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.style.display = 'block';
                   }}
-                  className="w-4 h-4 object-contain"
                 />
-                <Globe className="w-4 h-4 text-slate-400 dark:text-slate-500 hidden globe-stub" />
+                <Globe size={10} className="text-muted-foreground hidden" />
               </div>
-
-              {/* Title & Domain Context */}
-              <div className="flex-1 min-w-0 pr-4">
-                <h6 className="text-[13px] font-semibold text-slate-800 dark:text-slate-150 line-clamp-1 group-hover:text-google-blue dark:group-hover:text-google-purple transition-colors">
-                  {webInfo.title || 'Untitled search result'}
-                </h6>
-                <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-slate-500 block leading-tight mt-0.5">
-                  {domain}
-                </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-medium text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                  {title || domain}
+                </p>
+                <p className="text-[10px] text-muted-foreground font-mono">{domain}</p>
               </div>
-
-              {/* Numeric Indicator */}
-              <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                <span className="text-[11px] font-mono font-bold px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded">
-                  {index + 1}
-                </span>
-                <ExternalLink size={12} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300" />
-              </div>
-            </motion.a>
+              <ExternalLink size={11} className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-colors" />
+            </a>
           );
         })}
       </div>

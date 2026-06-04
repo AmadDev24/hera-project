@@ -19,7 +19,6 @@ export interface Message {
   text: string;
   timestamp: string;
   groundingMetadata?: GroundingMetadata;
-  isSearchingLogs?: string[]; // Log of searching states
 }
 
 export interface ChatSession {
@@ -31,16 +30,20 @@ export interface ChatSession {
   updatedAt?: string;
   rating?: 'up' | 'down';
   ratingNote?: string;
+  requiresHelp?: boolean; // true when expert lead was triggered
+  source?: string;        // 'embed-widget' | 'playground' | etc.
 }
 
 export interface Lead {
   id: string;
+  name?: string;       // client name (optional)
   email?: string;      // email OR phone required (at least one)
-  phone?: string;      // E.164-style, e.g. "+60123456789"
-  countryCode?: string; // e.g. "+60"
+  phone?: string;      // Malaysian local format, e.g. "012-3456789"
   firstQuery: string;
   timestamp: string;
   source: string;
+  sessionId?: string;  // chat session that captured this lead
+  userId?: string;     // persistent device ID
   notes?: string;
 }
 
@@ -48,8 +51,13 @@ export interface BrandingConfig {
   primaryColor: string;
   welcomeTitle: string;
   welcomeSubtitle: string;
-  disclaimerText: string;
   logoLetter: string;
+  // Company contact info (shown when clients ask about contact/location/hours)
+  companyName?: string;
+  companyEmail?: string;
+  companyPhone?: string;
+  companyAddress?: string;
+  businessHours?: string;
 }
 
 export interface SystemPromptConfig {

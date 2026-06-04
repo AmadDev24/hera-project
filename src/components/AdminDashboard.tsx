@@ -6,7 +6,7 @@ import {
   setDoc, deleteDoc, doc,
 } from 'firebase/firestore';
 import { ChatSession, Message, GroundingMetadata, Lead, BrandingConfig, SystemPromptConfig, AuditEntry, AlertConfig } from '../types';
-import { Sun, Moon, Code2 } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import {
@@ -16,7 +16,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from './admin/AppSidebar';
 import { type AdminTab } from './admin/AdminNav';
-import { streamGroundedResponse, DEFAULT_SYSTEM_PROMPT, DEFAULT_MODELS } from '../lib/gemini';
+import { streamGroundedResponse, DEFAULT_SYSTEM_PROMPT, DEFAULT_MODELS, listAvailableModels, type ModelInfo } from '../lib/gemini';
 import { sendEmail, sendTemplate, parseEmails, adminLeadAlertHtml, negativeRatingAlertHtml, newConversationAlertHtml } from '../lib/resend';
 import { MonitorTab } from './admin/tabs/MonitorTab';
 import { HistoryTab } from './admin/tabs/HistoryTab';
@@ -25,6 +25,7 @@ import { PlaygroundTab } from './admin/tabs/PlaygroundTab';
 import { LeadsTab } from './admin/tabs/LeadsTab';
 import { SettingsTab } from './admin/tabs/SettingsTab';
 import { AlertsTab } from './admin/tabs/AlertsTab';
+import { UsersTab, type AllowedUser } from './admin/tabs/UsersTab';
 import { useTheme } from '../hooks/useTheme';
 
 interface AdminDashboardProps {
@@ -34,19 +35,57 @@ interface AdminDashboardProps {
 }
 
 const PAGE_META: Record<AdminTab, { title: string; description: string }> = {
-  monitor:    { title: 'Dashboard',          description: 'Live analytics, traffic trends and compliance metrics.' },
-  history:    { title: 'Conversations',      description: 'Inspect and manage stored user conversations.' },
-  leads:      { title: 'Leads Manager',      description: 'View and export captured email leads from the chatbot.' },
-  faqs:       { title: 'FAQs',              description: 'Create and organise FAQ shortcuts in the chatbot.' },
-  playground: { title: 'Playground',        description: 'Test queries against the live grounded API.' },
-  alerts:     { title: 'Email Alerts',       description: 'Configure email notifications for leads, ratings, and conversations.' },
-  settings:   { title: 'Settings',          description: 'Configure chatbot prompts, branding, embed code, and more.' },
+  monitor:    { title: 'Dashboard',      description: 'Live analytics, traffic trends and compliance metrics.' },
+  history:    { title: 'Conversations',  description: 'Inspect and manage stored user conversations.' },
+  leads:      { title: 'Leads Manager',  description: 'View and export captured email leads from the chatbot.' },
+  faqs:       { title: 'FAQs',           description: 'Create and organise FAQ shortcuts in the chatbot.' },
+  playground: { title: 'Playground',     description: 'Test queries against the live grounded API.' },
+  alerts:     { title: 'Email Alerts',   description: 'Configure email notifications for leads, ratings, and conversations.' },
+  users:      { title: 'Users',          description: 'Manage who can access the admin console.' },
+  settings:   { title: 'Settings',       description: 'Configure chatbot prompts, branding, embed code, and more.' },
 };
 
 export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbed }: AdminDashboardProps) {
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<AdminTab>('monitor');
-  const [showEmbedPreview, setShowEmbedPreview] = useState(false);
+
+  // Inject the floating embed widget into the admin dashboard for live preview
+  useEffect(() => {
+    if ((window as any).heraChatWidget) return; // already loaded
+
+    const script = document.createElement('script');
+    script.src = '/embed.js';
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      // Clean up widget on unmount
+      const container = document.getElementById('hera-widget-container');
+      if (container) container.remove();
+      delete (window as any).heraChatWidget;
+      script.remove();
+    };
+  }, []);
+
+  // Model catalogue fetched from the Gemini API
+  const [modelInfos, setModelInfos] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
+  useEffect(() => {
+    setModelsLoading(true);
+    listAvailableModels()
+      .then((models) => {
+        setModelInfos(models);
+        // Populate the playground model selector with live model IDs
+        if (models.length > 0) {
+          const ids = models.map((m) => m.name);
+          setAvailableModels(ids);
+          // Keep selected model if it's still available, otherwise fall back
+          setSelectedModel((prev) => (ids.includes(prev ?? '') ? prev : ids[0]));
+        }
+      })
+      .finally(() => setModelsLoading(false));
+  }, []);
 
   const [analyticsLogs, setAnalyticsLogs]           = useState<any[]>([]);
   const [conversations, setConversations]           = useState<ChatSession[]>([]);
@@ -58,12 +97,14 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
   // Leads state
   const [leads, setLeads] = useState<Lead[]>([]);
 
+  // Users (allowlist) state
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>([]);
+
   // Settings state
   const [branding, setBranding] = useState<BrandingConfig>({
     primaryColor: '#2563eb',
-    welcomeTitle: 'Ask a taxation question!',
-    welcomeSubtitle: 'Grounded exclusively with HASiL registry.',
-    disclaimerText: '⛔ Cites official LHDN sources. Keep receipts 7 years.',
+    welcomeTitle: 'HERA Tax Assistant',
+    welcomeSubtitle: "Hello! I'm Hera, your virtual Malaysian tax consultant. I can answer tax questions based on official LHDN guidance. What would you like to know?",
     logoLetter: 'H',
   });
   const [prompts, setPrompts] = useState<SystemPromptConfig[]>([
@@ -143,6 +184,13 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
       }
     }, (e) => console.warn(e));
 
+    // Allowed users listener
+    const unsubUsers = onSnapshot(collection(db, 'allowedUsers'), (snap) => {
+      const list: AllowedUser[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AllowedUser));
+      setAllowedUsers(list.sort((a, b) => a.email.localeCompare(b.email)));
+    }, (e) => console.warn(e));
+
     // Leads listener
     const unsubL = onSnapshot(query(collection(db, 'leads'), orderBy('timestamp', 'desc'), limit(500)), (snap) => {
       const list: Lead[] = [];
@@ -150,24 +198,32 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
       setLeads(list);
     }, (e) => console.warn(e));
 
-    // Settings listeners
-    const unsubBranding = onSnapshot(collection(db, 'settings'), (snap) => {
+    // Merged settings listener — branding, prompts, and alerts in one subscription
+    const unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
       snap.forEach((d) => {
         const data = d.data();
-        if (d.id === 'branding' && data) setBranding((prev) => ({ ...prev, ...data }));
-        if (d.id === 'prompts' && data?.list) {
+        if (!data) return;
+        if (d.id === 'branding') {
+          setBranding((prev) => ({ ...prev, ...data }));
+          // Auto-fill any fields missing from older Firestore docs (one-time migration)
+          const defaults: Record<string, string> = {
+            primaryColor: '#2563eb',
+            welcomeTitle: 'HERA Tax Assistant',
+            welcomeSubtitle: "Hello! I'm Hera, your virtual Malaysian tax consultant. I can answer tax questions based on official LHDN guidance. What would you like to know?",
+            logoLetter: 'H',
+          };
+          const missing = Object.fromEntries(
+            Object.entries(defaults).filter(([k]) => !data[k]),
+          );
+          if (Object.keys(missing).length > 0) {
+            setDoc(doc(db, 'settings', 'branding'), missing, { merge: true }).catch(console.warn);
+          }
+        }
+        if (d.id === 'prompts' && data.list) {
           setPrompts(data.list);
           if (data.activePromptId) setActivePromptId(data.activePromptId);
         }
-      });
-    }, (e) => console.warn(e));
-
-    // Alert config listener
-    const unsubAlert = onSnapshot(collection(db, 'settings'), (snap) => {
-      snap.forEach((d) => {
-        if (d.id === 'alerts' && d.data()) {
-          setAlertConfig((prev) => ({ ...prev, ...d.data() }));
-        }
+        if (d.id === 'alerts') setAlertConfig((prev) => ({ ...prev, ...data }));
       });
     }, (e) => console.warn(e));
 
@@ -178,7 +234,7 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
       setAuditLog(list);
     }, (e) => console.warn(e));
 
-    return () => { unsubA(); unsubC(); unsubF(); unsubL(); unsubBranding(); unsubAudit(); unsubAlert(); };
+    return () => { unsubA(); unsubC(); unsubF(); unsubL(); unsubSettings(); unsubAudit(); unsubUsers(); };
   }, []);
 
   
@@ -222,6 +278,32 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
   const handleDeleteFaq = async (id: string) => {
     if (isLiveFirebase && db) await deleteDoc(doc(db, 'faqs', id)).catch(console.error);
     else setFaqs((c) => c.filter((f) => f.id !== id));
+  };
+
+  const handleAddUser = async (email: string) => {
+    const id = `user_${Date.now()}`;
+    const entry: AllowedUser = {
+      id,
+      email: email.toLowerCase(),
+      addedAt: new Date().toISOString(),
+      addedBy: currentUser?.email || 'unknown',
+    };
+    if (isLiveFirebase && db) {
+      await setDoc(doc(db, 'allowedUsers', id), entry).catch(console.error);
+      addAuditEntry('User Added', `Granted access to: ${email}`);
+    } else {
+      setAllowedUsers((prev) => [...prev, entry].sort((a, b) => a.email.localeCompare(b.email)));
+    }
+  };
+
+  const handleRemoveUser = async (id: string) => {
+    const user = allowedUsers.find((u) => u.id === id);
+    if (isLiveFirebase && db) {
+      await deleteDoc(doc(db, 'allowedUsers', id)).catch(console.error);
+      addAuditEntry('User Removed', `Revoked access for: ${user?.email || id}`);
+    } else {
+      setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
+    }
   };
 
   const handleDeleteLead = async (id: string) => {
@@ -380,9 +462,8 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
   const { title, description } = PAGE_META[activeTab];
 
   return (
-    <div className={theme === 'dark' ? 'dark' : ''}>
-      <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-        <SidebarProvider>
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+      <SidebarProvider>
           <AppSidebar
             activeTab={activeTab}
             onTabChange={(tab) => { setActiveTab(tab); if (tab !== 'history') setSelectedConversation(null); }}
@@ -393,6 +474,7 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
             theme={theme}
             onToggleTheme={toggleTheme}
             leadCount={leads.length}
+            userCount={allowedUsers.length}
           />
 
           <SidebarInset className="flex flex-col min-h-0 overflow-hidden">
@@ -419,17 +501,6 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                 </BreadcrumbList>
               </Breadcrumb>
                 <div className="ml-auto flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowEmbedPreview((s) => !s)}
-                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-2"
-                    aria-label="Toggle embed preview"
-                    id="top-right-embed-toggle"
-                  >
-                    <Code2 size={14} />
-                    <span className="hidden md:inline text-[11px]">Preview Embed</span>
-                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -464,6 +535,9 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                       onResetAnalytics={() => {}}
                       conversations={conversations}
                       leads={leads}
+                      modelInfos={modelInfos}
+                      modelsLoading={modelsLoading}
+                      selectedModel={selectedModel}
                     />
                   </motion.div>
                 )}
@@ -477,8 +551,8 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                       onCloseConversation={() => setSelectedConversation(null)}
                       onDeleteConversation={handleDeleteConversation}
                       isLiveFirebase={isLiveFirebase}
+                      leads={leads}
                       onContinueConversation={(conv) => {
-                        // Load conversation into playground and switch tab
                         setPlaygroundMessages(conv.messages || []);
                         setActiveTab('playground');
                       }}
@@ -524,6 +598,7 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                       leads={leads}
                       isLiveFirebase={isLiveFirebase}
                       onDeleteLead={handleDeleteLead}
+                      conversations={conversations}
                     />
                   </motion.div>
                 )}
@@ -534,6 +609,18 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                       alertConfig={alertConfig}
                       onAlertConfigChange={handleSaveAlertConfig}
                       isLiveFirebase={isLiveFirebase}
+                    />
+                  </motion.div>
+                )}
+
+                {activeTab === 'users' && (
+                  <motion.div key="users" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <UsersTab
+                      users={allowedUsers}
+                      isLiveFirebase={isLiveFirebase}
+                      currentUser={currentUser}
+                      onAddUser={handleAddUser}
+                      onRemoveUser={handleRemoveUser}
                     />
                   </motion.div>
                 )}
@@ -553,6 +640,8 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
                       selectedModel={selectedModel}
                       onModelChange={(m) => setSelectedModel(m)}
                       aiStudioUrl={import.meta.env.VITE_AI_STUDIO_URL || 'https://ai.google.com/studio'}
+                      modelInfos={modelInfos}
+                      modelsLoading={modelsLoading}
                     />
                   </motion.div>
                 )}
@@ -562,25 +651,6 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
 
           </SidebarInset>
         </SidebarProvider>
-      </div>
-      {showEmbedPreview && (
-        <div id="hasiltax-widget-preview" className="fixed bottom-5 right-5 z-50 w-[380px] h-[580px] rounded-lg shadow-2xl overflow-hidden border border-border/40">
-          <div className="flex items-center justify-between px-2 py-1 bg-card border-b border-border/40">
-            <div className="text-xs font-medium">Embed Preview</div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowEmbedPreview(false)} className="text-[11px] text-muted-foreground px-2 py-1 rounded hover:bg-muted/30">Close</button>
-            </div>
-          </div>
-          <iframe
-            src={`${window.location.origin}/#/embed`}
-            title="HERA Embed Preview"
-            className="w-full h-full"
-            style={{ border: 'none' }}
-            referrerPolicy="no-referrer"
-            allow="clipboard-write"
-          />
-        </div>
-      )}
     </div>
   );
 }

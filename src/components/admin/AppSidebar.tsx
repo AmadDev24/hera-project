@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
   BarChart3, MessageSquare, BookOpen, FlaskConical,
-  Sparkles, LogOut, Sun, Moon, Settings, Bell,
-  ChevronUp, Shield, Users,
+  Sparkles, LogOut, Settings, Bell,
+  ChevronUp, Users, UserCircle2,
 } from 'lucide-react';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
@@ -28,16 +28,19 @@ interface AppSidebarProps {
   onLogout: () => void;
   theme: Theme;
   onToggleTheme: () => void;
+  leadCount?: number;
+  userCount?: number;
 }
 
 const NAV_ITEMS: { tab: AdminTab; label: string; icon: React.ReactNode; description: string }[] = [
-  { tab: 'monitor',    label: 'Dashboard',    icon: <BarChart3 size={16} />,    description: 'Analytics overview' },
-  { tab: 'history',    label: 'Conversations',icon: <MessageSquare size={16} />, description: 'Chat history' },
-  { tab: 'leads',      label: 'Leads',        icon: <Users size={16} />,        description: 'Captured emails' },
-  { tab: 'faqs',       label: 'FAQs',         icon: <BookOpen size={16} />,     description: 'Manage FAQ cards' },
-  { tab: 'playground', label: 'Playground',   icon: <FlaskConical size={16} />, description: 'Test the API' },
-  { tab: 'alerts',     label: 'Email Alerts', icon: <Bell size={16} />,         description: 'Notification settings' },
-  { tab: 'settings',   label: 'Settings',     icon: <Settings size={16} />,     description: 'Configure chatbot' },
+  { tab: 'monitor',    label: 'Dashboard',    icon: <BarChart3 size={16} />,      description: 'Analytics overview' },
+  { tab: 'history',    label: 'Conversations',icon: <MessageSquare size={16} />,  description: 'Chat history' },
+  { tab: 'leads',      label: 'Leads',        icon: <Users size={16} />,          description: 'Captured emails' },
+  { tab: 'faqs',       label: 'FAQs',         icon: <BookOpen size={16} />,       description: 'Manage FAQ cards' },
+  { tab: 'playground', label: 'Playground',   icon: <FlaskConical size={16} />,   description: 'Test the API' },
+  { tab: 'alerts',     label: 'Email Alerts', icon: <Bell size={16} />,           description: 'Notification settings' },
+  { tab: 'users',      label: 'Users',        icon: <UserCircle2 size={16} />,    description: 'Manage access' },
+  { tab: 'settings',   label: 'Settings',     icon: <Settings size={16} />,       description: 'Configure chatbot' },
 ];
 
 export function AppSidebar({
@@ -50,7 +53,8 @@ export function AppSidebar({
   theme,
   onToggleTheme,
   leadCount = 0,
-}: AppSidebarProps & { leadCount?: number }) {
+  userCount = 0,
+}: AppSidebarProps) {
   const email   = currentUser?.email ?? 'admin@hasil.gov.my';
   const name    = currentUser?.displayName ?? email.split('@')[0];
   const photo   = currentUser?.photoURL ?? '';
@@ -89,7 +93,8 @@ export function AppSidebar({
                 const badge =
                   item.tab === 'history' ? conversationCount :
                   item.tab === 'faqs'    ? faqCount :
-                  item.tab === 'leads'   ? leadCount : undefined;
+                  item.tab === 'leads'   ? leadCount :
+                  item.tab === 'users'   ? userCount : undefined;
 
                 return (
                   <SidebarMenuItem key={item.tab}>

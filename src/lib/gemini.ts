@@ -154,6 +154,95 @@ export async function streamGroundedResponse(
   }
 }
 
-export const DEFAULT_MODELS = ['gemini-2.5-flash', 'gemini-1.5-mini', 'gemini-1.5-pro'];
+export const DEFAULT_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
 export { DEFAULT_SYSTEM_PROMPT };
+
+// ── Model catalogue ────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  name: string;
+  displayName: string;
+  inputTokenLimit: number;
+  outputTokenLimit: number;
+  inputPricePerMillion: number | null;  // USD
+  outputPricePerMillion: number | null; // USD
+}
+
+/**
+ * Known Gemini pricing (USD per 1M tokens, standard tier, June 2025).
+ * Keys are prefix-matched against the model name so versioned IDs like
+ * "gemini-2.5-flash-001" still resolve to the right row.
+ */
+const GEMINI_PRICING: Array<{ prefix: string; input: number; output: number }> = [
+  { prefix: 'gemini-2.5-pro',        input: 1.25,   output: 10.00 },
+  { prefix: 'gemini-2.5-flash-8b',   input: 0.0375, output: 0.15  },
+  { prefix: 'gemini-2.5-flash',      input: 0.15,   output: 0.60  },
+  { prefix: 'gemini-2.0-flash-lite', input: 0.075,  output: 0.30  },
+  { prefix: 'gemini-2.0-flash',      input: 0.10,   output: 0.40  },
+  { prefix: 'gemini-1.5-pro',        input: 1.25,   output: 5.00  },
+  { prefix: 'gemini-1.5-flash-8b',   input: 0.0375, output: 0.15  },
+  { prefix: 'gemini-1.5-flash',      input: 0.075,  output: 0.30  },
+];
+
+function lookupPricing(modelId: string) {
+  return GEMINI_PRICING.find((p) => modelId.startsWith(p.prefix)) ?? null;
+}
+
+/**
+ * Fetches the list of models available to this API key via the Gemini REST API.
+ * Uses the REST endpoint directly to avoid @google/genai SDK pagination quirks.
+ * Returns an empty array if the key is missing or the request fails.
+ */
+export async function listAvailableModels(): Promise<ModelInfo[]> {
+  if (!GEMINI_API_KEY) return [];
+
+  try {
+    // Fetch up to 200 models (the endpoint paginates at 50 by default)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}&pageSize=200`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`[gemini] listAvailableModels HTTP ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const rawModels: any[] = data.models ?? [];
+    const results: ModelInfo[] = [];
+
+    for (const model of rawModels) {
+      const methods: string[] = model.supportedGenerationMethods ?? [];
+      const supportsGenerate =
+        methods.includes('generateContent') ||
+        methods.includes('streamGenerateContent');
+      if (!supportsGenerate) continue;
+
+      // "models/gemini-2.5-flash-001" → "gemini-2.5-flash-001"
+      const shortId: string = (model.name ?? '').replace(/^models\//, '');
+
+      // Skip embeddings and legacy tuning models
+      if (
+        shortId.includes('embed') ||
+        shortId.includes('aqa') ||
+        shortId.includes('bison') ||
+        shortId.includes('gecko')
+      ) continue;
+
+      const pricing = lookupPricing(shortId);
+
+      results.push({
+        name: shortId,
+        displayName: model.displayName || shortId,
+        inputTokenLimit:  model.inputTokenLimit  ?? 0,
+        outputTokenLimit: model.outputTokenLimit ?? 0,
+        inputPricePerMillion:  pricing ? pricing.input  : null,
+        outputPricePerMillion: pricing ? pricing.output : null,
+      });
+    }
+
+    return results.sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) {
+    console.warn('[gemini] listAvailableModels failed:', e);
+    return [];
+  }
+}

@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, User } from 'firebase/auth';
-import { getFirestore, collection, addDoc, setDoc, doc, getDoc, getDocs, query, where, orderBy, onSnapshot, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, setDoc, doc, getDoc, getDocs, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 
 // Define the operation enum as instructed by skills guide
 export enum OperationType {
@@ -43,11 +43,6 @@ import(/* @vite-ignore */ CONFIG_FILE_PATH)
       db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
       auth = getAuth(app);
       isFirebaseAvailable = true;
-
-      // Test connection lazily in the background as mandated by instructions
-      getDocFromServer(doc(db, 'test', 'connection')).catch(() => {
-        console.warn("Firestore client is offline or preparing first-time setup.");
-      });
     }
   })
   .catch(() => {

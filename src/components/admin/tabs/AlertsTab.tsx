@@ -13,13 +13,25 @@ interface AlertsTabProps {
   isLiveFirebase: boolean;
 }
 
+function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${checked ? 'bg-primary' : 'bg-muted'}`}
+    >
+      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+    </button>
+  );
+}
+
 export function AlertsTab({ alertConfig, onAlertConfigChange, isLiveFirebase }: AlertsTabProps) {
   const [draft, setDraft] = useState<AlertConfig>(alertConfig);
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
 
-  useEffect(() => {
-    setDraft(alertConfig);
-  }, [alertConfig]);
+  useEffect(() => { setDraft(alertConfig); }, [alertConfig]);
 
   const isResendConfigured = !!import.meta.env.VITE_RESEND_API_KEY;
 
@@ -28,194 +40,137 @@ export function AlertsTab({ alertConfig, onAlertConfigChange, isLiveFirebase }: 
       await navigator.clipboard.writeText(value);
       setCopiedVar(key);
       window.setTimeout(() => setCopiedVar(null), 1500);
-    } catch (err) {
-      console.warn('Copy failed:', err);
-    }
+    } catch {}
   };
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-2xl">
 
-      {/* Header info card */}
-      <BentoCard className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Bell size={14} className="text-primary" />
-          <p className="text-xs font-semibold text-foreground">Email Alerts via Resend</p>
-          <Badge variant={draft.enabled ? 'default' : 'secondary'} className="text-[9px] ml-auto">
-            {draft.enabled ? '● Enabled' : '○ Disabled'}
+      {/* Status card */}
+      <BentoCard>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Bell size={16} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Email Alerts via Resend</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Receive notifications when events occur on the chatbot.</p>
+            </div>
+          </div>
+          <Badge variant={draft.enabled ? 'default' : 'secondary'} className="text-xs shrink-0">
+            {draft.enabled ? 'Active' : 'Disabled'}
           </Badge>
         </div>
-        <p className="text-[10px] text-muted-foreground leading-relaxed">
-          Receive instant email notifications when events occur on the HERA chatbot. Powered by Resend API.
-        </p>
 
-        {/* Resend API key status inline */}
         {!isResendConfigured && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-            <span className="text-[10px] text-amber-600 dark:text-amber-400">
-              ⚠️ Resend API key not configured — set <code className="font-mono">VITE_RESEND_API_KEY</code> in your .env file.
-            </span>
-            <a
-              href={RESEND_DASHBOARD_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto text-[10px] text-primary hover:underline shrink-0"
-            >
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Set <code className="font-mono">VITE_RESEND_API_KEY</code> in your .env file to enable email alerts.
+            </p>
+            <a href={RESEND_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline shrink-0">
               Get Key →
             </a>
           </div>
         )}
       </BentoCard>
 
-      {/* Master toggle */}
-      <BentoCard className="p-4">
+      {/* Enable + recipients */}
+      <BentoCard className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-foreground">Enable Alerts</p>
-            <p className="text-[10px] text-muted-foreground">Master switch for all email notifications</p>
+            <p className="text-sm font-medium text-foreground">Enable Alerts</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Master switch for all email notifications</p>
           </div>
-          <button
-            onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
-            className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${draft.enabled ? 'bg-primary' : 'bg-muted'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${draft.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-          </button>
+          <Toggle checked={draft.enabled} onChange={() => setDraft({ ...draft, enabled: !draft.enabled })} />
+        </div>
+
+        <div className="border-t border-border/30 pt-4 space-y-1.5">
+          <label className="text-xs font-medium text-foreground">Admin Recipients</label>
+          <Input
+            type="text"
+            value={draft.adminEmails}
+            onChange={(e) => setDraft({ ...draft, adminEmails: e.target.value })}
+            placeholder="admin@example.com, manager@example.com"
+            className="h-9 text-xs"
+          />
+          <p className="text-xs text-muted-foreground">Comma-separated email addresses</p>
         </div>
       </BentoCard>
 
-      {/* Admin recipients */}
-      <BentoCard className="p-4 space-y-1.5">
-        <label className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider">
-          Admin Recipients (comma-separated)
-        </label>
-        <Input
-          type="text"
-          value={draft.adminEmails}
-          onChange={(e) => setDraft({ ...draft, adminEmails: e.target.value })}
-          placeholder="admin@example.com, manager@example.com"
-          className="h-9 text-xs"
-        />
-        <p className="text-[9px] text-muted-foreground">
-          Multiple emails separated by commas. Alert emails will be sent to all addresses.
-        </p>
-      </BentoCard>
-
       {/* Alert triggers */}
-      <BentoCard className="p-4 space-y-2">
-        <label className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider">
-          Alert Triggers
-        </label>
+      <BentoCard className="space-y-1">
+        <p className="text-sm font-medium text-foreground mb-3">Alert Triggers</p>
         {[
-          { key: 'notifyOnLeads',            label: 'New Lead Captured',  desc: 'When a user submits their email' },
-          { key: 'notifyOnNegativeRating',   label: 'Negative Rating',    desc: 'When a user rates a response as unhelpful' },
-          { key: 'notifyOnNewConversation',  label: 'New Conversation',   desc: 'When a new chat conversation is completed' },
+          { key: 'notifyOnLeads',           label: 'New Lead Captured',  desc: 'When a user submits their email' },
+          { key: 'notifyOnNegativeRating',  label: 'Negative Rating',    desc: 'When a user rates a response as unhelpful' },
+          { key: 'notifyOnNewConversation', label: 'New Conversation',   desc: 'When a new chat session is completed' },
         ].map((item) => (
-          <div key={item.key} className="flex items-center justify-between rounded-xl border border-border/30 bg-muted/10 px-4 py-2.5">
+          <div key={item.key} className="flex items-center justify-between rounded-lg border border-border/30 bg-muted/10 px-4 py-3">
             <div>
-              <p className="text-xs text-foreground">{item.label}</p>
-              <p className="text-[10px] text-muted-foreground">{item.desc}</p>
+              <p className="text-xs font-medium text-foreground">{item.label}</p>
+              <p className="text-xs text-muted-foreground">{item.desc}</p>
             </div>
-            <button
-              onClick={() => setDraft({ ...draft, [item.key]: !(draft as any)[item.key] })}
-              className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${(draft as any)[item.key] ? 'bg-primary' : 'bg-muted'}`}
-            >
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${(draft as any)[item.key] ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </button>
+            <Toggle
+              checked={(draft as any)[item.key]}
+              onChange={() => setDraft({ ...draft, [item.key]: !(draft as any)[item.key] })}
+            />
           </div>
         ))}
       </BentoCard>
 
       {/* Lead welcome email */}
-      <BentoCard className="p-4">
+      <BentoCard>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-foreground">Send Welcome Email to Leads</p>
-            <p className="text-[10px] text-muted-foreground">Automatically email the lead when they submit their address</p>
+            <p className="text-xs font-medium text-foreground">Send Welcome Email to Leads</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Automatically email new leads when they submit their address</p>
           </div>
-          <button
-            onClick={() => setDraft({ ...draft, sendLeadWelcomeEmail: !draft.sendLeadWelcomeEmail })}
-            className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${draft.sendLeadWelcomeEmail ? 'bg-emerald-500' : 'bg-muted'}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${draft.sendLeadWelcomeEmail ? 'translate-x-5' : 'translate-x-0.5'}`} />
-          </button>
+          <Toggle
+            checked={draft.sendLeadWelcomeEmail}
+            onChange={() => setDraft({ ...draft, sendLeadWelcomeEmail: !draft.sendLeadWelcomeEmail })}
+          />
         </div>
       </BentoCard>
 
-      {/* Resend Template IDs */}
-      <BentoCard className="p-4 space-y-3 border-primary/20 bg-primary/5">
+      {/* Template IDs */}
+      <BentoCard className="space-y-4">
         <div className="flex items-center justify-between">
-          <label className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider">
-            Resend Template IDs
-          </label>
-          <a
-            href={RESEND_DASHBOARD_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-primary hover:underline flex items-center gap-1"
-          >
-            Open Resend Dashboard →
+          <div>
+            <p className="text-sm font-medium text-foreground">Resend Template IDs</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Optional — leave empty to use built-in templates.</p>
+          </div>
+          <a href={RESEND_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+            Open Dashboard →
           </a>
         </div>
-        <p className="text-[10px] text-muted-foreground leading-relaxed">
-          Design email templates in the <strong>Resend Template Editor</strong> (React Email).
-          Paste the template IDs below. If left empty, built-in fallback templates will be used.
-        </p>
 
-        <div className="space-y-2">
-          <div className="space-y-1">
-            <label className="text-[10px] text-foreground/70">Lead Alert Template ID</label>
-            <Input
-              value={draft.leadTemplateId}
-              onChange={(e) => setDraft({ ...draft, leadTemplateId: e.target.value })}
-              placeholder="e.g. 8e1f3a2b-..."
-              className="h-8 text-xs font-mono"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] text-foreground/70">Negative Rating Template ID</label>
-            <Input
-              value={draft.negativeRatingTemplateId}
-              onChange={(e) => setDraft({ ...draft, negativeRatingTemplateId: e.target.value })}
-              placeholder="e.g. 3c9d7e1f-..."
-              className="h-8 text-xs font-mono"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] text-foreground/70">New Conversation Template ID</label>
-            <Input
-              value={draft.newConversationTemplateId}
-              onChange={(e) => setDraft({ ...draft, newConversationTemplateId: e.target.value })}
-              placeholder="e.g. 5a8b2c4d-..."
-              className="h-8 text-xs font-mono"
-            />
-          </div>
-          {draft.sendLeadWelcomeEmail && (
-            <div className="space-y-1">
-              <label className="text-[10px] text-foreground/70">Lead Welcome Email Template ID</label>
+        <div className="space-y-3">
+          {[
+            { key: 'leadTemplateId', label: 'Lead Alert Template ID', placeholder: 'e.g. 8e1f3a2b-…' },
+            { key: 'negativeRatingTemplateId', label: 'Negative Rating Template ID', placeholder: 'e.g. 3c9d7e1f-…' },
+            { key: 'newConversationTemplateId', label: 'New Conversation Template ID', placeholder: 'e.g. 5a8b2c4d-…' },
+            ...(draft.sendLeadWelcomeEmail ? [{ key: 'leadWelcomeTemplateId', label: 'Lead Welcome Email Template ID', placeholder: 'e.g. 7f2e4a6b-…' }] : []),
+          ].map((field) => (
+            <div key={field.key} className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">{field.label}</label>
               <Input
-                value={draft.leadWelcomeTemplateId}
-                onChange={(e) => setDraft({ ...draft, leadWelcomeTemplateId: e.target.value })}
-                placeholder="e.g. 7f2e4a6b-..."
+                value={(draft as any)[field.key]}
+                onChange={(e) => setDraft({ ...draft, [field.key]: e.target.value })}
+                placeholder={field.placeholder}
                 className="h-8 text-xs font-mono"
               />
             </div>
-          )}
+          ))}
         </div>
       </BentoCard>
 
-      {/* Fixed variable names for Resend templates */}
-      <BentoCard className="p-4 space-y-3 border border-border/40 bg-muted/10">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider">
-              Fixed Resend Variable Names
-            </p>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Use these exact names in your Resend template editor. The dashboard sends these values automatically.
-            </p>
-          </div>
+      {/* Variable reference */}
+      <BentoCard className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">Template Variable Reference</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Use these exact variable names in your Resend template editor.</p>
         </div>
-
         <div className="space-y-3">
           {[
             { title: 'Lead Alert', vars: RESEND_FIXED_VARIABLES.leadAlert },
@@ -223,57 +178,30 @@ export function AlertsTab({ alertConfig, onAlertConfigChange, isLiveFirebase }: 
             { title: 'New Conversation', vars: RESEND_FIXED_VARIABLES.newConversation },
             { title: 'Lead Welcome', vars: RESEND_FIXED_VARIABLES.leadWelcome },
           ].map((group) => (
-            <div key={group.title} className="rounded-xl border border-border/40 bg-background/60 p-3 space-y-2">
-              <p className="text-[10px] font-semibold text-foreground">{group.title}</p>
-              <div className="grid gap-2">
-                {Object.entries(group.vars).map(([name, desc]) => (
-                  <div key={name} className="flex items-start justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
-                    <div className="min-w-0">
-                      <code className="text-[11px] font-mono text-primary break-all">{name}</code>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">{desc}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(name, `${group.title}-${name}`)}
-                      className="shrink-0 inline-flex items-center gap-1 rounded-md border border-border/40 bg-background/60 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                      title={`Copy ${name}`}
-                    >
-                      {copiedVar === `${group.title}-${name}` ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
-                      {copiedVar === `${group.title}-${name}` ? 'Copied' : 'Copy'}
-                    </button>
+            <div key={group.title} className="rounded-lg border border-border/40 bg-muted/10 p-3 space-y-2">
+              <p className="text-xs font-medium text-foreground">{group.title}</p>
+              {Object.entries(group.vars).map(([name, desc]) => (
+                <div key={name} className="flex items-center justify-between gap-3 rounded-md bg-background/60 px-3 py-2">
+                  <div className="min-w-0">
+                    <code className="text-xs font-mono text-primary">{name}</code>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{desc as string}</p>
                   </div>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(name, `${group.title}-${name}`)}
+                    className="shrink-0 inline-flex items-center gap-1 rounded border border-border/40 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copiedVar === `${group.title}-${name}` ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}
+                    {copiedVar === `${group.title}-${name}` ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              ))}
             </div>
           ))}
         </div>
       </BentoCard>
 
-      {/* Resend API key status */}
-      <BentoCard className="p-4 flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-semibold text-foreground mb-1">Resend API Key</p>
-          <p className="text-[10px] text-muted-foreground">
-            {isResendConfigured
-              ? '✅ Key configured (VITE_RESEND_API_KEY)'
-              : '⚠️ Not configured. Set VITE_RESEND_API_KEY in .env file.'}
-          </p>
-        </div>
-        <a
-          href={RESEND_DASHBOARD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[10px] text-primary hover:underline shrink-0"
-        >
-          Get API Key →
-        </a>
-      </BentoCard>
-
-      <Button
-        size="sm"
-        onClick={() => onAlertConfigChange(draft)}
-        className="h-8 text-xs gap-1.5"
-      >
+      <Button size="sm" onClick={() => onAlertConfigChange(draft)} className="h-9 text-xs gap-1.5 px-4">
         <Save size={12} /> Save Alert Settings
       </Button>
     </div>

@@ -71,15 +71,14 @@ export default function App() {
   };
 
   const navigateToEmbed = () => {
-    window.location.hash = '#/embed';
+    window.location.href = '/embed';
   };
 
   const navigateToAdmin = () => {
     try {
-      // If running inside an iframe, try to navigate the top window to the admin route
+      // If running inside an iframe, navigate the top window to the admin route
       if (window.top && window.top !== window) {
-        // Prefer setting the full href to avoid nested-hash issues
-        window.top.location.href = `${window.location.origin}/#`;
+        window.top.location.href = window.location.origin + '/';
         return;
       }
     } catch (e) {
@@ -87,7 +86,7 @@ export default function App() {
     }
 
     // Default: navigate within the current window
-    window.location.hash = '';
+    window.location.href = '/';
   };
 
   // Skeleton loader during auth verification

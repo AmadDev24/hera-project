@@ -2,12 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Global safety net (Default-Deny Catch-All)
+    // ── Global deny-all safety net ────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 2. Hardened global helpers
+    // ── Auth helpers ──────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
@@ -31,16 +31,14 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // 3. Schema validation helpers
+    // ── Schema helpers ────────────────────────────────────────────────────
+
+    // Conversations: required core fields only — allow extra fields (requiresHelp, source, etc.)
     function isValidConversation(data) {
       return data.keys().hasAll(['id', 'userId', 'title', 'createdAt', 'updatedAt', 'messages'])
-          && data.keys().size() == 6
-          && data.id is string
-          && data.id.size() <= 128
-          && data.userId is string
-          && data.userId.size() <= 128
-          && data.title is string
-          && data.title.size() <= 256
+          && data.id is string && data.id.size() <= 128
+          && data.userId is string && data.userId.size() <= 256
+          && data.title is string && data.title.size() <= 256
           && data.messages is list
           && (data.createdAt is string || data.createdAt is timestamp)
           && (data.updatedAt is string || data.updatedAt is timestamp);
@@ -48,72 +46,72 @@ service cloud.firestore {
 
     function isValidAnalytics(data) {
       return data.keys().hasAll(['id', 'query', 'timestamp', 'domainCount', 'citedDomains', 'clientEmail'])
-          && data.keys().size() >= 6
-          && data.id is string
-          && data.id.size() <= 128
-          && data.query is string
-          && data.query.size() <= 2000
+          && data.id is string && data.id.size() <= 128
+          && data.query is string && data.query.size() <= 2000
           && data.domainCount is int
           && data.citedDomains is list
-          && data.clientEmail is string
-          && data.clientEmail.size() <= 256
+          && data.clientEmail is string && data.clientEmail.size() <= 256
           && (data.timestamp is string || data.timestamp is timestamp);
     }
 
     function isValidFAQ(data) {
       return data.keys().hasAll(['id', 'title', 'query', 'answer', 'order', 'enabled'])
-          && data.keys().size() >= 6
-          && data.id is string
-          && data.id.size() <= 128
-          && data.title is string
-          && data.title.size() <= 256
-          && data.query is string
-          && data.query.size() <= 2000
-          && data.answer is string
-          && data.answer.size() <= 5000
+          && data.id is string && data.id.size() <= 128
+          && data.title is string && data.title.size() <= 256
+          && data.query is string && data.query.size() <= 2000
+          && data.answer is string && data.answer.size() <= 5000
           && data.order is int
           && data.enabled is bool;
     }
 
-    // 4. Collection rules
+    // Leads: either email or phone must be present (phone-only leads now supported)
+    function isValidLead(data) {
+      return data.keys().hasAll(['id', 'firstQuery', 'timestamp', 'source'])
+          && data.id is string && data.id.size() <= 128
+          && data.firstQuery is string && data.firstQuery.size() <= 2000
+          && data.source is string
+          && (data.timestamp is string || data.timestamp is timestamp)
+          && (
+            (data.keys().hasAny(['email']) && data.email is string && data.email.size() <= 256) ||
+            (data.keys().hasAny(['phone']) && data.phone is string && data.phone.size() <= 50)
+          );
+    }
+
+    // ── Collection rules ──────────────────────────────────────────────────
+
     match /admins/{adminId} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
+    // Conversations — embed widget uses device UUID as userId (not 'embed-widget' anymore)
     match /conversations/{conversationId} {
-      // Authenticated users — CRUD on own or embed-widget conversations
+      allow read, list: if true;
+
+      // Authenticated users (admin playground)
       allow create: if isSignedIn()
                     && isValidId(conversationId)
-                    && isValidConversation(incoming())
-                    && (incoming().userId == request.auth.uid || incoming().userId == 'embed-widget');
+                    && isValidConversation(incoming());
 
       allow update: if isSignedIn()
                     && isValidId(conversationId)
                     && isValidConversation(incoming())
-                    && (existing().userId == request.auth.uid || existing().userId == 'embed-widget')
-                    && (incoming().userId == request.auth.uid || incoming().userId == 'embed-widget')
                     && incoming().createdAt == existing().createdAt;
 
-      // Embed widget — unauthenticated create/update
+      // Embed widget — unauthenticated create (any userId is allowed)
       allow create: if !isSignedIn()
                     && isValidId(conversationId)
                     && incoming().keys().hasAll(['id', 'userId', 'title', 'messages', 'createdAt', 'updatedAt'])
                     && incoming().userId is string
                     && incoming().title is string
-                    && incoming().messages is list
-                    && incoming().userId == 'embed-widget';
+                    && incoming().messages is list;
 
+      // Embed widget — unauthenticated update (for streaming chunks and requiresHelp flag)
       allow update: if !isSignedIn()
                     && isValidId(conversationId)
-                    && incoming().keys().hasAll(['id', 'userId', 'title', 'messages', 'createdAt', 'updatedAt'])
-                    && incoming().messages is list
-                    && existing().userId == 'embed-widget';
+                    && incoming().userId is string;
 
-      // Read — conversations are public chatbot Q&A, readable by all authenticated users
-      allow get: if true;
-      allow list: if true;
-      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
     }
 
     match /analytics/{analyticsId} {
@@ -124,14 +122,12 @@ service cloud.firestore {
       allow create: if !isSignedIn()
                     && isValidId(analyticsId)
                     && incoming().keys().hasAll(['id', 'query', 'timestamp', 'domainCount', 'citedDomains', 'clientEmail'])
-                    && incoming().id is string
                     && incoming().query is string
                     && incoming().clientEmail is string
                     && incoming().citedDomains is list
                     && incoming().domainCount is int;
 
-      allow get: if true;
-      allow list: if true;
+      allow get, list: if true;
       allow update, delete: if false;
     }
 
@@ -141,14 +137,17 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Leads — supports deduplication overwrites and phone-only leads
     match /leads/{leadId} {
-      allow create: if isValidId(leadId)
-                    && incoming().keys().hasAll(['id', 'email', 'firstQuery', 'timestamp', 'source'])
-                    && incoming().email is string
-                    && incoming().email.size() <= 256;
       allow read, list: if true;
+
+      // Create new lead (email or phone)
+      allow create: if isValidId(leadId) && isValidLead(incoming());
+
+      // Overwrite/update existing lead for deduplication (same contact, new session)
+      allow update: if isValidId(leadId) && isValidLead(incoming());
+
       allow delete: if isAdmin();
-      allow update: if false;
     }
 
     match /settings/{settingId} {
@@ -163,5 +162,25 @@ service cloud.firestore {
                     && incoming().action is string;
       allow update, delete: if false;
     }
+
+    // Allowed users (admin access list)
+    match /allowedUsers/{userId} {
+      allow read, list: if isSignedIn();
+      allow create, update: if isSignedIn()
+                            && incoming().keys().hasAll(['id', 'email', 'addedAt'])
+                            && incoming().email is string
+                            && incoming().email.size() <= 256;
+      allow delete: if isSignedIn();
+    }
+
+    // User profiles (persistent client preferences from embed chat)
+    match /userProfiles/{profileId} {
+      allow read: if true;
+      allow create, update: if isValidId(profileId)
+                            && incoming().keys().hasAll(['userId', 'savedAt'])
+                            && incoming().userId is string;
+      allow delete: if isAdmin();
+    }
+
   }
 }

@@ -1,19 +1,23 @@
 import type { ReactNode, CSSProperties, MouseEventHandler } from 'react';
 
+interface BentoCardProps {
+  className?: string;
+  style?: CSSProperties;
+  onClick?: MouseEventHandler<HTMLDivElement>;
+  children: ReactNode;
+  padding?: boolean;
+}
+
 export function BentoCard({
   className = '',
   style,
   onClick,
   children,
-}: {
-  className?: string;
-  style?: CSSProperties;
-  onClick?: MouseEventHandler<HTMLDivElement>;
-  children: ReactNode;
-}) {
+  padding = true,
+}: BentoCardProps) {
   return (
     <div
-      className={`rounded-2xl border border-border/60 bg-card p-5 shadow-[0_8px_28px_-18px_rgba(15,23,42,0.35)] ${className}`}
+      className={`rounded-xl border border-border/50 bg-card shadow-sm ${padding ? 'p-5' : ''} ${onClick ? 'cursor-pointer' : ''} ${className}`}
       style={style}
       onClick={onClick}
     >
