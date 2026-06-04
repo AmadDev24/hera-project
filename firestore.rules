@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global safety net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == "syamiel2410@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Schema validation helpers
+    function isValidConversation(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'createdAt', 'updatedAt', 'messages'])
+          && data.keys().size() == 6
+          && data.id is string
+          && data.id.size() <= 128
+          && data.userId is string
+          && data.userId.size() <= 128
+          && data.title is string
+          && data.title.size() <= 256
+          && data.messages is list
+          && (data.createdAt is string || data.createdAt is timestamp)
+          && (data.updatedAt is string || data.updatedAt is timestamp);
+    }
+
+    function isValidAnalytics(data) {
+      return data.keys().hasAll(['id', 'query', 'timestamp', 'domainCount', 'citedDomains', 'clientEmail'])
+          && data.keys().size() >= 6
+          && data.id is string
+          && data.id.size() <= 128
+          && data.query is string
+          && data.query.size() <= 2000
+          && data.domainCount is int
+          && data.citedDomains is list
+          && data.clientEmail is string
+          && data.clientEmail.size() <= 256
+          && (data.timestamp is string || data.timestamp is timestamp);
+    }
+
+    function isValidFAQ(data) {
+      return data.keys().hasAll(['id', 'title', 'query', 'answer', 'order', 'enabled'])
+          && data.keys().size() >= 6
+          && data.id is string
+          && data.id.size() <= 128
+          && data.title is string
+          && data.title.size() <= 256
+          && data.query is string
+          && data.query.size() <= 2000
+          && data.answer is string
+          && data.answer.size() <= 5000
+          && data.order is int
+          && data.enabled is bool;
+    }
+
+    // 4. Collection rules
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /conversations/{conversationId} {
+      // Authenticated users — CRUD on own or embed-widget conversations
+      allow create: if isSignedIn()
+                    && isValidId(conversationId)
+                    && isValidConversation(incoming())
+                    && (incoming().userId == request.auth.uid || incoming().userId == 'embed-widget');
+
+      allow update: if isSignedIn()
+                    && isValidId(conversationId)
+                    && isValidConversation(incoming())
+                    && (existing().userId == request.auth.uid || existing().userId == 'embed-widget')
+                    && (incoming().userId == request.auth.uid || incoming().userId == 'embed-widget')
+                    && incoming().createdAt == existing().createdAt;
+
+      // Embed widget — unauthenticated create/update
+      allow create: if !isSignedIn()
+                    && isValidId(conversationId)
+                    && incoming().keys().hasAll(['id', 'userId', 'title', 'messages', 'createdAt', 'updatedAt'])
+                    && incoming().userId is string
+                    && incoming().title is string
+                    && incoming().messages is list
+                    && incoming().userId == 'embed-widget';
+
+      allow update: if !isSignedIn()
+                    && isValidId(conversationId)
+                    && incoming().keys().hasAll(['id', 'userId', 'title', 'messages', 'createdAt', 'updatedAt'])
+                    && incoming().messages is list
+                    && existing().userId == 'embed-widget';
+
+      // Read — conversations are public chatbot Q&A, readable by all authenticated users
+      allow get: if true;
+      allow list: if true;
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /analytics/{analyticsId} {
+      allow create: if isSignedIn()
+                    && isValidId(analyticsId)
+                    && isValidAnalytics(incoming());
+
+      allow create: if !isSignedIn()
+                    && isValidId(analyticsId)
+                    && incoming().keys().hasAll(['id', 'query', 'timestamp', 'domainCount', 'citedDomains', 'clientEmail'])
+                    && incoming().id is string
+                    && incoming().query is string
+                    && incoming().clientEmail is string
+                    && incoming().citedDomains is list
+                    && incoming().domainCount is int;
+
+      allow get: if true;
+      allow list: if true;
+      allow update, delete: if false;
+    }
+
+    match /faqs/{faqId} {
+      allow read, list: if true;
+      allow create, update: if isValidId(faqId) && isValidFAQ(incoming());
+      allow delete: if true;
+    }
+
+    match /leads/{leadId} {
+      allow create: if isValidId(leadId)
+                    && incoming().keys().hasAll(['id', 'email', 'firstQuery', 'timestamp', 'source'])
+                    && incoming().email is string
+                    && incoming().email.size() <= 256;
+      allow read, list: if true;
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    match /audit/{auditId} {
+      allow read, list: if true;
+      allow create: if incoming().keys().hasAll(['id', 'action', 'detail', 'adminEmail', 'timestamp'])
+                    && incoming().action is string;
+      allow update, delete: if false;
+    }
+  }
+}

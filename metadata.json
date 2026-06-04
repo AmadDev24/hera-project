@@ -1,0 +1,6 @@
+{
+  "name": "Search AI Chatbot",
+  "description": "An AI-powered chatbot that uses Google Search Grounding to provide accurate, real-time web search results and interactive citations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
