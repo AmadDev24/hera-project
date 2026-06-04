@@ -12,13 +12,15 @@ import {
   Bookmark,
   ThumbsUp,
   ThumbsDown,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, isFirebaseAvailable } from '../lib/firebase';
 import { collection, getDocs, getDoc, setDoc, doc } from 'firebase/firestore';
-import { updateDoc } from 'firebase/firestore';
 import { streamGroundedResponse } from '../lib/gemini';
-import { sendEmail, sendTemplate, parseEmails, adminLeadAlertHtml, leadWelcomeHtml, negativeRatingAlertHtml, RESEND_FIXED_VARIABLES } from '../lib/resend';
+import { sendEmail, sendTemplate, parseEmails, adminLeadAlertHtml, leadWelcomeHtml, negativeRatingAlertHtml } from '../lib/resend';
 import Markdown from 'react-markdown';
 import SourcesViewer from './SourcesViewer';
 import SearchLogs from './SearchLogs';
@@ -98,7 +100,10 @@ export default function EmbedChat() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<string, 'up' | 'down'>>({});
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [sessionId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const [sessionId, setSessionId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   // Branding config from Firestore (with defaults)
   const [alertConfig, setAlertConfig] = useState({ enabled: false, adminEmails: '', notifyOnLeads: true, notifyOnNegativeRating: true, notifyOnNewConversation: false, leadTemplateId: '', negativeRatingTemplateId: '', newConversationTemplateId: '', sendLeadWelcomeEmail: false, leadWelcomeTemplateId: '' });
   const [branding, setBranding] = useState({
@@ -529,8 +534,63 @@ export default function EmbedChat() {
     setErrorText(null);
   };
 
+  const handleReloadChat = () => {
+    // Reset conversation and regenerate a session id
+    setMessages([]);
+    setErrorText(null);
+    setSessionId(`conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    // ensure widget is visible when reloading
+    setIsVisible(true);
+    setIsMinimized(false);
+    setIsMaximized(false);
+  };
+
+  const handleToggleMaximize = () => {
+    // Toggle maximized state; un-minimize if currently minimized
+    setIsMinimized(false);
+    setIsMaximized((v) => !v);
+    setIsVisible(true);
+  };
+
+  const handleToggleMinimize = () => {
+    setIsMinimized((v) => !v);
+    if (isMaximized) setIsMaximized(false);
+    setIsVisible(true);
+  };
+
+  const handleCloseWidget = () => {
+    setIsVisible(false);
+  };
+
+  // Prevent background scroll while maximized
+  useEffect(() => {
+    if (isMaximized) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prev; };
+    }
+    return;
+  }, [isMaximized]);
+
   return (
-    <div className="relative flex flex-col h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden font-sans" id="embed-widget-container">
+    <>
+      <AnimatePresence>
+        {isVisible && !isMinimized && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={isMaximized ? 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40' : ''}
+          >
+            <motion.div
+              layout
+              initial={isMaximized ? { scale: 0.9, opacity: 0 } : { scale: 1, opacity: 1 }}
+              animate={isMaximized ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+              className={`relative flex flex-col ${isMaximized ? 'h-full w-full md:w-4/5 md:h-[80vh] rounded-xl overflow-hidden' : 'h-screen w-full'} bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden font-sans`}
+              id="embed-widget-container"
+            >
       
       {/* Branded Widget Header (Highly streamlined, eye-safe, and compact) */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-850/80 bg-white/95 dark:bg-slate-900/95 shadow-xs shrink-0 select-none">
@@ -549,14 +609,36 @@ export default function EmbedChat() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleResetChat}
-            className="p-1 px-1.5 dark:bg-slate-800 dark:hover:bg-slate-750 hover:bg-slate-100 text-slate-450 dark:text-slate-350 rounded-md text-[10px] font-bold border border-slate-200 dark:border-slate-700 font-mono transition-colors cursor-pointer"
-            id="reset-embed-chat"
-            title="Clear active discussion timeline and restart"
-          >
-            Reset
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleToggleMinimize}
+              title="Minimize"
+              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <Minimize2 size={14} />
+            </button>
+            <button
+              onClick={handleToggleMaximize}
+              title="Maximize"
+              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+            <button
+              onClick={handleReloadChat}
+              title="Reload"
+              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              onClick={handleCloseWidget}
+              title="Close"
+              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-[10px] font-bold text-slate-400 font-mono">
             hasil.gov.my
@@ -871,6 +953,22 @@ export default function EmbedChat() {
         </p>
       </div>
 
-    </div>
+        </motion.div>
+          </motion.div>
+        )}
+        {isMinimized && (
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            onClick={() => setIsMinimized(false)}
+            className="fixed bottom-4 right-4 z-60 w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+            title="Restore chat"
+          >
+            <span className="font-black">H</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

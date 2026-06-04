@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Save } from 'lucide-react';
+import { Bell, Save, Copy, Check } from 'lucide-react';
 import { BentoCard } from '../BentoCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { AlertConfig } from '../../../types';
-import { RESEND_DASHBOARD_URL } from '../../../lib/resend';
+import { RESEND_DASHBOARD_URL, RESEND_FIXED_VARIABLES } from '../../../lib/resend';
 
 interface AlertsTabProps {
   alertConfig: AlertConfig;
@@ -15,12 +15,23 @@ interface AlertsTabProps {
 
 export function AlertsTab({ alertConfig, onAlertConfigChange, isLiveFirebase }: AlertsTabProps) {
   const [draft, setDraft] = useState<AlertConfig>(alertConfig);
+  const [copiedVar, setCopiedVar] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(alertConfig);
   }, [alertConfig]);
 
   const isResendConfigured = !!import.meta.env.VITE_RESEND_API_KEY;
+
+  const handleCopy = async (value: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedVar(key);
+      window.setTimeout(() => setCopiedVar(null), 1500);
+    } catch (err) {
+      console.warn('Copy failed:', err);
+    }
+  };
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -189,6 +200,52 @@ export function AlertsTab({ alertConfig, onAlertConfigChange, isLiveFirebase }: 
               />
             </div>
           )}
+        </div>
+      </BentoCard>
+
+      {/* Fixed variable names for Resend templates */}
+      <BentoCard className="p-4 space-y-3 border border-border/40 bg-muted/10">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider">
+              Fixed Resend Variable Names
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Use these exact names in your Resend template editor. The dashboard sends these values automatically.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {[
+            { title: 'Lead Alert', vars: RESEND_FIXED_VARIABLES.leadAlert },
+            { title: 'Negative Rating', vars: RESEND_FIXED_VARIABLES.negativeRating },
+            { title: 'New Conversation', vars: RESEND_FIXED_VARIABLES.newConversation },
+            { title: 'Lead Welcome', vars: RESEND_FIXED_VARIABLES.leadWelcome },
+          ].map((group) => (
+            <div key={group.title} className="rounded-xl border border-border/40 bg-background/60 p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-foreground">{group.title}</p>
+              <div className="grid gap-2">
+                {Object.entries(group.vars).map(([name, desc]) => (
+                  <div key={name} className="flex items-start justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
+                    <div className="min-w-0">
+                      <code className="text-[11px] font-mono text-primary break-all">{name}</code>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">{desc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(name, `${group.title}-${name}`)}
+                      className="shrink-0 inline-flex items-center gap-1 rounded-md border border-border/40 bg-background/60 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      title={`Copy ${name}`}
+                    >
+                      {copiedVar === `${group.title}-${name}` ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                      {copiedVar === `${group.title}-${name}` ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </BentoCard>
 
