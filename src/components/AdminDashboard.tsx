@@ -122,6 +122,8 @@ export default function AdminDashboard({ onLogout, currentUser, onNavigateToEmbe
     enabled: false, adminEmails: '', notifyOnLeads: true, notifyOnNegativeRating: true,
     notifyOnNewConversation: false, leadTemplateId: '', negativeRatingTemplateId: '',
     newConversationTemplateId: '', sendLeadWelcomeEmail: false, leadWelcomeTemplateId: '',
+    complexTaxResponseEn: "This involves a specialist tax area that requires professional expertise. Our licensed tax consultants can provide detailed guidance.\n\n*Leave your contact below — we'll reach out within 1 business day.* 📞",
+    complexTaxResponseBm: "Soalan ini melibatkan topik cukai khusus yang memerlukan kepakaran profesional. Konsultan cukai berlesen kami dapat membantu anda secara terperinci.\n\n*Tinggalkan kenalan anda di bawah — kami akan hubungi anda dalam 1 hari bekerja.* 📞",
   });
 
   const [playgroundQuery, setPlaygroundQuery]           = useState('');

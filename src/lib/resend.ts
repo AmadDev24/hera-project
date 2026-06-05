@@ -60,7 +60,7 @@ export async function sendEmail({ to, subject, html, from, replyTo }: SendEmailP
     };
     if (replyTo) body.reply_to = replyTo;
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const response = await fetch('/api/resend/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
@@ -98,12 +98,14 @@ export async function sendTemplate({ to, templateId, variables, from, replyTo }:
     const body: Record<string, any> = {
       from: from || 'HERA Tax Assistant <onboarding@resend.dev>',
       to: recipients,
-      template_id: templateId,
-      variables,
+      template: {
+        id: templateId,
+        variables: variables || {},
+      },
     };
     if (replyTo) body.reply_to = replyTo;
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const response = await fetch('/api/resend/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${RESEND_API_KEY}`,

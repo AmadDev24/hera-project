@@ -92,4 +92,7 @@ export interface AlertConfig {
   // Send welcome email to the lead directly
   sendLeadWelcomeEmail: boolean;
   leadWelcomeTemplateId: string;
+  // Customizable complex-tax response message (shown instead of AI response for specialist topics)
+  complexTaxResponseEn: string;
+  complexTaxResponseBm: string;
 }

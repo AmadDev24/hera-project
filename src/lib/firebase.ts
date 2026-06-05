@@ -1,6 +1,7 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, User } from 'firebase/auth';
 import { getFirestore, collection, addDoc, setDoc, doc, getDoc, getDocs, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 // Define the operation enum as instructed by skills guide
 export enum OperationType {
@@ -24,30 +25,21 @@ export interface FirestoreErrorInfo {
   }
 }
 
-// Global references that remain null if config is absent
+// Global references — initialized synchronously from the bundled config
 let isFirebaseAvailable = false;
 let db: any = null;
 let auth: any = null;
 
-// Gracefully parse and load the configuration file
-let firebaseConfig: any = null;
-
-// Dynamic import with exception catch to handle first-time or standalone hosting
-const CONFIG_FILE_PATH = '../../firebase-applet-config.json';
-
-import(/* @vite-ignore */ CONFIG_FILE_PATH)
-  .then((module) => {
-    firebaseConfig = module.default || module;
-    if (firebaseConfig && firebaseConfig.apiKey) {
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-      db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
-      auth = getAuth(app);
-      isFirebaseAvailable = true;
-    }
-  })
-  .catch(() => {
-    console.log("Firebase Applet configuration is not yet created. Falling back to local offline mode.");
-  });
+try {
+  if (firebaseConfig && firebaseConfig.apiKey) {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || undefined);
+    auth = getAuth(app);
+    isFirebaseAvailable = true;
+  }
+} catch (e) {
+  console.warn("Firebase initialization failed:", e);
+}
 
 export { isFirebaseAvailable, db, auth };
 

@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db, isFirebaseAvailable } from '../lib/firebase';
 import { collection, getDocs, getDoc, setDoc, doc, query, where } from 'firebase/firestore';
 import { streamGroundedResponse, DEFAULT_SYSTEM_PROMPT } from '../lib/gemini';
-import { sendEmail, parseEmails } from '../lib/resend';
+import { sendEmail, sendTemplate, parseEmails } from '../lib/resend';
 import Markdown from 'react-markdown';
 import SourcesViewer from './SourcesViewer';
 import { Message, GroundingMetadata } from '../types';
@@ -38,6 +38,9 @@ const THANK_YOU_RE   = /^(thanks|thank\s*you|terima\s*kasih|tq|ty|ok\s*(thanks|t
 const HELP_RE        = /^(talk\s*to\s*(someone|agent|expert|consultant|human|person)|speak\s*to|contact\s*(agent|expert|us)|nak\s*(jumpa|cakap)|bagi\s*contact|ada\s*(agent|consultant)|refer\s*me|call\s*me|hubungi\s*saya|whatsapp)[\s!.?]*$/i;
 const TAX_RE         = /tax|cukai|lhdn|hasil|relief|pelepasan|filing|e-filing|borang|form\s*(be|b|m|t|c)|income|pendapatan|deduction|claim|ya\s*\d{4}|ta\s*\d{4}|assessment|rebate|exemption|pcb|epf|kwsp|socso|sst|gst|corporate|sme|deadline|tarikh|due\s*date|refund|bayaran|bayar\s*balik|pengecualian|potongan/i;
 
+// Complex/specialist tax topics that need a human consultant — skip API, show lead form
+const COMPLEX_TAX_RE = /transfer\s*pricing|harga\s*pindahan|thin\s*capitaliz|cross[\s-]border|double\s*tax(ation)?\s*(agreement|treaty|avoidance)|dta\b|tax\s*audit|audit\s*cukai|tax\s*restructur|penstrukturan\s*semula|advance\s*(pricing|ruling)|apa\b|merger|acquisition|pengambilalihan|controlled\s*(foreign|transaction)|country[\s-]by[\s-]country|master\s*file|local\s*file|benchmark(ing)?\s*(study|analysis)|withholding\s*tax\s*(exemption|treaty)|labuan\s*(tax|company|offshore)|real\s*property\s*gains\s*tax\s*(exemption|appeal)|rpgt\s*appeal|tax\s*litigation|rayuan\s*cukai|penalty\s*(appeal|remission)|stamp\s*duty\s*(exemption|relief|appeal)|capital\s*allowance\s*(accelerated|complex)|group\s*relief/i;
+
 const OFF_TOPIC_WORDS = [
   'weather', 'cuaca', 'recipe', 'resep', 'cook', 'football', 'soccer', 'bola',
   'music', 'lagu', 'movie', 'film', 'game', 'makanan', 'food', 'pizza', 'travel',
@@ -46,7 +49,7 @@ const OFF_TOPIC_WORDS = [
   'programming', 'coding', 'javascript', 'python',
 ];
 
-type QueryType = 'greeting' | 'thank-you' | 'help-request' | 'off-topic-tax' | 'off-topic' | 'tax';
+type QueryType = 'greeting' | 'thank-you' | 'help-request' | 'complex-tax' | 'off-topic-tax' | 'off-topic' | 'tax';
 
 function classifyQuery(text: string): QueryType {
   const trimmed = text.trim();
@@ -54,6 +57,8 @@ function classifyQuery(text: string): QueryType {
   if (THANK_YOU_RE.test(trimmed)) return 'thank-you';
   if (HELP_RE.test(trimmed))      return 'help-request';
   const lower = trimmed.toLowerCase();
+  // Complex specialist tax topics → skip API, show lead form
+  if (COMPLEX_TAX_RE.test(lower)) return 'complex-tax';
   const isOff = OFF_TOPIC_WORDS.some((w) => lower.includes(w)) && !TAX_RE.test(lower);
   if (isOff) {
     // Genuine tax question that happens to be outside LHDN scope
@@ -234,7 +239,7 @@ export default function EmbedChat() {
   const [userProfile] = useState<UserProfile | null>(() => loadUserProfile());
 
   // Alert config for email notifications
-  const [alertConfig, setAlertConfig] = useState<{ enabled?: boolean; adminEmails?: string; notifyOnLeads?: boolean } | null>(null);
+  const [alertConfig, setAlertConfig] = useState<{ enabled?: boolean; adminEmails?: string; notifyOnLeads?: boolean; leadTemplateId?: string; complexTaxResponseEn?: string; complexTaxResponseBm?: string } | null>(null);
 
   // Lead forms
   const [engLeadName, setEngLeadName]           = useState('');
@@ -435,6 +440,36 @@ export default function EmbedChat() {
     if (!contact || isSavingLead || !isContact(contact)) return;
     setIsSavingLead(true);
     await saveLead(contact, engLeadName, 'engagement');
+
+    // Send lead alert email to admins
+    if (alertConfig?.notifyOnLeads && alertConfig.adminEmails) {
+      const recipients = parseEmails(alertConfig.adminEmails);
+      if (recipients.length > 0) {
+        const firstQuery = messages.find(m => m.role === 'user')?.text || '—';
+        if (alertConfig.leadTemplateId?.trim()) {
+          sendTemplate({
+            to: recipients,
+            templateId: alertConfig.leadTemplateId.trim(),
+            variables: {
+              lead_email: contact,
+              lead_query: firstQuery,
+              lead_time: new Date().toLocaleString(),
+            },
+          }).catch(() => {});
+        } else {
+          sendEmail({
+            to: recipients,
+            subject: 'HERA: New Lead Captured',
+            html: `<p>A new lead was captured via the chatbot.</p>
+<p><strong>Contact:</strong> ${contact}</p>
+<p><strong>Name:</strong> ${engLeadName.trim() || '—'}</p>
+<p><strong>First query:</strong> ${firstQuery}</p>
+<p><strong>Time:</strong> ${new Date().toLocaleString()}</p>`,
+          }).catch(() => {});
+        }
+      }
+    }
+
     setEngLeadState('submitted');
     setIsSavingLead(false);
   };
@@ -447,20 +482,32 @@ export default function EmbedChat() {
     await saveLead(contact, expLeadName, 'expert');
 
     // Notify admin via email when a "can't answer" lead submits contact
-    if (alertConfig?.enabled && alertConfig.notifyOnLeads && alertConfig.adminEmails) {
+    if (alertConfig?.notifyOnLeads && alertConfig.adminEmails) {
       const recipients = parseEmails(alertConfig.adminEmails);
       if (recipients.length > 0) {
         const lastQuery = messages.filter(m => m.role === 'user').slice(-1)[0]?.text || '—';
-        sendEmail({
-          to: recipients,
-          subject: 'HERA: Unanswered Query — Lead Contact Submitted',
-          html: `<p>A chatbot visitor submitted their contact after the bot could not fully answer their question.</p>
+        if (alertConfig.leadTemplateId?.trim()) {
+          sendTemplate({
+            to: recipients,
+            templateId: alertConfig.leadTemplateId.trim(),
+            variables: {
+              lead_email: contact,
+              lead_query: lastQuery,
+              lead_time: new Date().toLocaleString(),
+            },
+          }).catch(() => {});
+        } else {
+          sendEmail({
+            to: recipients,
+            subject: 'HERA: Unanswered Query — Lead Contact Submitted',
+            html: `<p>A chatbot visitor submitted their contact after the bot could not fully answer their question.</p>
 <p><strong>Name:</strong> ${expLeadName.trim() || '—'}</p>
 <p><strong>Contact:</strong> ${contact}</p>
 <p><strong>Last query:</strong> ${lastQuery}</p>
 <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
 <p><em>Please follow up within 1 business day.</em></p>`,
-        }).catch(() => {});
+          }).catch(() => {});
+        }
       }
     }
 
@@ -564,6 +611,18 @@ export default function EmbedChat() {
     // ── Off-topic (no tax keywords) ──
     if (type === 'off-topic') {
       setMessages((prev) => [...prev, userMsg, { id: `embed_local_${Date.now()}`, role: 'model', text: OFF_TOPIC_RESPONSE, timestamp: userMsg.timestamp }]);
+      return;
+    }
+
+    // ── Complex specialist tax → expert lead ──
+    if (type === 'complex-tax') {
+      const defaultEn = "This involves a specialist tax area that requires professional expertise. Our licensed tax consultants can provide detailed guidance.\n\n*Leave your contact below — we'll reach out within 1 business day.* 📞";
+      const defaultBm = "Soalan ini melibatkan topik cukai khusus yang memerlukan kepakaran profesional. Konsultan cukai berlesen kami dapat membantu anda secara terperinci.\n\n*Tinggalkan kenalan anda di bawah — kami akan hubungi anda dalam 1 hari bekerja.* 📞";
+      const reply = lang === 'bm'
+        ? (alertConfig?.complexTaxResponseBm || defaultBm)
+        : (alertConfig?.complexTaxResponseEn || defaultEn);
+      setMessages((prev) => [...prev, userMsg, { id: `embed_local_${Date.now()}`, role: 'model', text: reply, timestamp: userMsg.timestamp }]);
+      if (!localStorage.getItem('hasiltax-expert-contacted')) setExpLeadState('visible');
       return;
     }
 
