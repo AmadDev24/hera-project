@@ -250,7 +250,7 @@ export default function AdminLogin({ onLoginSuccess, onNavigateToEmbed }: AdminL
               </Button>
             </form>
 
-            <div className="text-center">
+            {/* <div className="text-center">
               <button
                 type="button"
                 onClick={() => {
@@ -266,28 +266,8 @@ export default function AdminLogin({ onLoginSuccess, onNavigateToEmbed }: AdminL
                   : 'Need an account? Register'
                 }
               </button>
-            </div>
+            </div> */}
           </CardContent>
-
-          {/* Quick mock bypass */}
-          <CardFooter className="flex flex-col gap-2 bg-muted/20 border-t border-border/40 px-6 py-4">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest text-center">
-              Quick Access
-            </p>
-            <Button
-              variant="outline"
-              onClick={handleSimulateMockLogin}
-              disabled={isLoading}
-              className="w-full h-8 text-xs gap-2 bg-transparent"
-              id="mock-login-trigger"
-            >
-              <Sparkles size={12} className="text-amber-400" />
-              Generate Mock Admin Access
-            </Button>
-            <p className="text-[10px] text-muted-foreground/70 text-center leading-relaxed">
-              Creates a temporary mock account for reviewing dashboard features.
-            </p>
-          </CardFooter>
 
         </Card>
       </main>
